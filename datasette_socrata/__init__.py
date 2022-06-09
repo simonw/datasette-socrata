@@ -158,7 +158,6 @@ async def import_socrata(request, datasette):
     if len(supported_databases) == 1:
         database = supported_databases[0]
     else:
-        print(vars)
         database_name = vars.get("database")
         filtered = [db for db in supported_databases if db.name == database_name]
         if not filtered:
