@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Import data from Socrata{% endblock %}
+
+{% block extra_head %}
+
+{% endblock %}
+
+{% block nav %}
+    <p class="crumbs">
+        <a href="/">home</a>
+    </p>
+    {{ super() }}
+{% endblock %}
+
+{% block content %}
+<h1>Import data from Socrata</h1>
+
+{% if error %}
+    <p class="message-error">{{ error }}</p>
+{% endif %}
+
+<form action="/-/import-socrata" method="post">
+    <p>
+        <input type="hidden" name="csrftoken" value="{{ csrftoken() }}">
+        <label style="width: auto; display: inline-block; width: 60%">Socrata URL: <input style="width: 60%" type="text" name="url" value="{{ url }}"></label>
+        <input type="submit" value="Import data">
+    </p>
+    {% if fetched_metadata %}
+      <p><strong>{{ fetched_metadata.name }}</strong>{% if row_count %} - {{ "{:,}".format(row_count) }} row{{ "" if row_count == 1 else "s" }}{% endif %}</p>
+      {% if fetched_metadata.description %}
+        <p style="max-width: 60em">{{ fetched_metadata.description }}</p>
+      {% endif %}
+    {% endif %}
+    {% if databases|length > 1 %}
+    <p><label style="width: auto">Database to create table in: <select>
+        {% for database_name in databases %}
+            <option{% if database == database_name %} selected="selected"{% endif %}>{{ database_name }}</option>
+        {% endfor %}
+    </select></label></p>
+{% endif %}
+</form>
+
+{% endblock %}
