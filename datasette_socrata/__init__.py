@@ -1,4 +1,4 @@
-from datasette import hookimpl, Response
+from datasette import hookimpl, Response, Forbidden
 import asyncio
 import datetime
 import httpx
@@ -75,7 +75,11 @@ async def get_row_count(domain, id):
     return None
 
 
-async def socrata(request, datasette):
+async def import_socrata(request, datasette):
+    if not await datasette.permission_allowed(
+        request.actor, "import-socrata", default=False
+    ):
+        raise Forbidden("Permission denied for import-socrata")
     if request.method != "POST":
         url = request.args.get("url") or ""
         error = None
@@ -237,7 +241,7 @@ class AsyncDictReader:
 
 @hookimpl
 def register_routes():
-    return [(r"^/-/import-socrata$", socrata)]
+    return [(r"^/-/import-socrata$", import_socrata)]
 
 
 @hookimpl
@@ -263,3 +267,10 @@ def startup(datasette):
         )
 
     return inner
+
+
+@hookimpl
+def permission_allowed(actor, action):
+    print(actor, action)
+    if action == "import-socrata" and actor and actor.get("id") == "root":
+        return True

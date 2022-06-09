@@ -15,7 +15,15 @@ Install this plugin in the same environment as Datasette.
 
 ## Usage
 
-Usage instructions go here.
+Once installed, an interface for importing data from Socrata will become available at this URL:
+
+    /-/import-socrata
+
+Users will be able to paste in a URL to a dataset on Socrata in order to initialize an import.
+
+The `import-socrata` permission governs access. By default the `root` actor (accessible using `datasette --root` to start Datasette) is granted that permission.
+
+You can use permission plugins such as [datasette-permissions-sql](https://github.com/simonw/datasette-permissions-sql) to grant additional access to other users.
 
 ## Development
 

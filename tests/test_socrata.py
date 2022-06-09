@@ -37,6 +37,7 @@ async def test_import_shows_preview(datasette, httpx_mock):
         params={
             "url": "https://data.edmonton.ca/Urban-Planning-Economy/General-Building-Permits/24uj-dj8v"
         },
+        cookies={"ds_actor": datasette.sign({"a": {"id": "root"}}, "actor")},
     )
     assert response.status_code == 200
     request = httpx_mock.get_requests()[0]
@@ -77,6 +78,7 @@ async def test_import_shows_preview_errors(
         params={
             "url": url,
         },
+        cookies={"ds_actor": datasette.sign({"a": {"id": "root"}}, "actor")},
     )
     assert response.status_code == 200
     html = response.text
@@ -109,6 +111,7 @@ async def test_import(datasette, httpx_mock):
         params={
             "url": "https://data.edmonton.ca/Urban-Planning-Economy/General-Building-Permits/24uj-dj8v"
         },
+        cookies={"ds_actor": datasette.sign({"a": {"id": "root"}}, "actor")},
     )
     assert response.status_code == 200
     csrftoken = response.cookies["ds_csrftoken"]
@@ -119,6 +122,10 @@ async def test_import(datasette, httpx_mock):
         data={
             "url": "https://data.edmonton.ca/Urban-Planning-Economy/General-Building-Permits/24uj-dj8v",
             "csrftoken": csrftoken,
+        },
+        cookies={
+            "ds_actor": datasette.sign({"a": {"id": "root"}}, "actor"),
+            "ds_csrftoken": csrftoken,
         },
     )
     assert import_response.status_code == 302
@@ -150,3 +157,15 @@ async def test_import(datasette, httpx_mock):
         {"id": 1, "species": "Dog"},
         {"id": 2, "species": "Chicken"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_permissions(datasette):
+    response = await datasette.client.get("/-/import-socrata")
+    assert response.status_code == 403
+    # Now try with a root actor
+    response2 = await datasette.client.get(
+        "/-/import-socrata",
+        cookies={"ds_actor": datasette.sign({"a": {"id": "root"}}, "actor")},
+    )
+    assert response2.status_code == 200
