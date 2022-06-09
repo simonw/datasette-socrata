@@ -333,3 +333,76 @@ def menu_links(datasette, actor):
             ]
 
     return inner
+
+
+PROGRESS_JS = """
+const SOCRATA_PROGRESS_CSS = `
+progress.datasette-socrata {
+    -webkit-appearance: none;
+    appearance: none;
+    border: none;
+    width: 100%;
+    height: 2em;
+    margin-top: 1em;
+    margin-bottom: 1em;
+}
+progress.datasette-socrata::-webkit-progress-bar {
+    background-color: #ddd;
+}
+progress.datasette-socrata::-webkit-progress-value {
+    background-color: #124d77;
+}
+`;
+(function() {
+    const style = document.createElement("style");
+    style.innerHTML = SOCRATA_PROGRESS_CSS;
+    const pollUrl = !POLL_URL!;
+    document.head.appendChild(style);
+    const progress = document.createElement('progress');
+    progress.setAttribute('class', 'datasette-socrata');
+    progress.setAttribute('value', 0);
+    progress.setAttribute('max', 100);
+    progress.style.display = 'none';
+    progress.innerHTML = 'Importing from Socrata...';
+    const table = document.querySelector('table.rows-and-columns');
+    table.parentNode.insertBefore(progress, table);
+    /* Start polling */
+    function pollNext() {
+        fetch(pollUrl).then(r => r.json()).then(rows => {
+            if (rows.length) {
+                const row = rows[0];
+                if (row.row_count > row.row_progress) {
+                    progress.style.display = 'block';
+                    progress.setAttribute('value', row.row_progress);
+                    progress.setAttribute('max', row.row_count);
+                    setTimeout(pollNext, 2000);
+                } else {
+                    progress.style.display = 'none';
+                }
+            }
+        });
+    }
+    pollNext();
+})();
+"""
+
+
+@hookimpl
+def extra_body_script(view_name, table, database, datasette):
+    if not table:
+        return
+    dataset_id = table.replace("socrata_", "").replace("_", "-")
+    if (
+        view_name == "table"
+        and table.startswith("socrata_")
+        and is_valid_id(dataset_id)
+    ):
+        return PROGRESS_JS.replace(
+            "!POLL_URL!",
+            json.dumps(
+                "{}.json?id={}&_shape=array&_col=row_count&_col=row_progress".format(
+                    datasette.urls.table(database=database, table="socrata_imports"),
+                    dataset_id,
+                )
+            ),
+        )
