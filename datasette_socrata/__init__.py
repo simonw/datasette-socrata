@@ -328,7 +328,7 @@ def menu_links(datasette, actor):
             return [
                 {
                     "href": datasette.urls.path("/-/import-socrata"),
-                    "label": "Import table",
+                    "label": "Import from Socrata",
                 },
             ]
 
