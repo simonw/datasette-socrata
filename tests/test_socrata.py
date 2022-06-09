@@ -228,3 +228,18 @@ async def test_permissions(datasette):
         cookies={"ds_actor": datasette.sign({"a": {"id": "root"}}, "actor")},
     )
     assert response2.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("auth", [True, False])
+async def test_menu(auth):
+    ds = Datasette(memory=True)
+    cookies = {}
+    if auth:
+        cookies = {"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")}
+    response = await ds.client.get("/", cookies=cookies)
+    assert response.status_code == 200
+    if auth:
+        assert "/-/import-socrata" in response.text
+    else:
+        assert "/-/import-socrata" not in response.text

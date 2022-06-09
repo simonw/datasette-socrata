@@ -319,3 +319,17 @@ def register_routes():
 def permission_allowed(actor, action):
     if action == "import-socrata" and actor and actor.get("id") == "root":
         return True
+
+
+@hookimpl
+def menu_links(datasette, actor):
+    async def inner():
+        if await datasette.permission_allowed(actor, "import-socrata", default=False):
+            return [
+                {
+                    "href": datasette.urls.path("/-/import-socrata"),
+                    "label": "Import table",
+                },
+            ]
+
+    return inner
