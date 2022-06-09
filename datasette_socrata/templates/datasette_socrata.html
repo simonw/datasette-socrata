@@ -21,24 +21,29 @@
 {% endif %}
 
 <form action="/-/import-socrata" method="post">
-    <p>
-        <input type="hidden" name="csrftoken" value="{{ csrftoken() }}">
-        <label style="width: auto; display: inline-block; width: 60%">Socrata URL: <input style="width: 60%" type="text" name="url" value="{{ url }}"></label>
-        <input type="submit" value="Import data">
-    </p>
-    {% if fetched_metadata %}
-      <p><strong>{{ fetched_metadata.name }}</strong>{% if row_count %} - {{ "{:,}".format(row_count) }} row{{ "" if row_count == 1 else "s" }}{% endif %}</p>
-      {% if fetched_metadata.description %}
-        <p style="max-width: 60em">{{ fetched_metadata.description }}</p>
-      {% endif %}
+  <p>
+    <input type="hidden" name="csrftoken" value="{{ csrftoken() }}">
+    <label style="width: auto; display: inline-block; width: 60%">Socrata URL: <input style="width: 60%" type="text" name="url" value="{{ url }}"></label>
+    <input type="submit" value="Import data">
+  </p>
+  {% if fetched_metadata %}
+    <p><strong>{{ fetched_metadata.name }}</strong>{% if row_count %} - {{ "{:,}".format(row_count) }} row{{ "" if row_count == 1 else "s" }}{% endif %}</p>
+    {% if fetched_metadata.description %}
+      <p style="max-width: 60em">{{ fetched_metadata.description }}</p>
     {% endif %}
-    {% if databases|length > 1 %}
-    <p><label style="width: auto">Database to create table in: <select>
-        {% for database_name in databases %}
-            <option{% if database == database_name %} selected="selected"{% endif %}>{{ database_name }}</option>
-        {% endfor %}
-    </select></label></p>
-{% endif %}
+  {% endif %}
+  {% if databases|length > 1 %}
+  <p>
+    <label style="width: auto">Database to create table in:
+    <select name="database">
+      {% for database_name in databases %}
+        <option{% if database == database_name %} selected="selected"{% endif %}>{{ database_name }}</option>
+      {% endfor %}
+    </select></label>
+  </p>
+  {% else %}
+    <p>Data will be imported into the <strong>{{ databases[0] }}</strong> database.</p>
+  {% endif %}
 </form>
 
 {% endblock %}

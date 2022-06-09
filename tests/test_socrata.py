@@ -13,12 +13,25 @@ def non_mocked_hosts():
 @pytest.fixture
 def datasette(tmpdir):
     db_path = str(tmpdir / "data.db")
-    sqlite_utils.Database(db_path).vacuum()
+    sqlite_utils.Database(db_path).enable_wal()
     return Datasette([db_path])
 
 
-@pytest.mark.asyncio
-async def test_import_shows_preview(datasette, httpx_mock):
+@pytest.fixture
+def datasette2(tmpdir):
+    # Datasette with two attached WAL databases, and one not-WAL
+    db_paths = []
+    for name in ("data2.db", "data3.db", "notwal.db"):
+        db_path = str(tmpdir / name)
+        if name == "notwal.db":
+            sqlite_utils.Database(db_path).vacuum()
+        else:
+            sqlite_utils.Database(db_path).enable_wal()
+        db_paths.append(db_path)
+    return Datasette(db_paths)
+
+
+def mock_metadata_and_count(httpx_mock):
     httpx_mock.add_response(
         url="https://data.edmonton.ca/api/views/24uj-dj8v.json",
         json={
@@ -29,9 +42,13 @@ async def test_import_shows_preview(datasette, httpx_mock):
     )
     httpx_mock.add_response(
         url="https://data.edmonton.ca/resource/24uj-dj8v.json?$select=count(*)",
-        json=[{"count": "123"}],
+        json=[{"count": "2"}],
     )
 
+
+@pytest.mark.asyncio
+async def test_import_shows_preview(datasette, httpx_mock):
+    mock_metadata_and_count(httpx_mock)
     response = await datasette.client.get(
         "/-/import-socrata",
         params={
@@ -44,8 +61,11 @@ async def test_import_shows_preview(datasette, httpx_mock):
     assert request.url == "https://data.edmonton.ca/api/views/24uj-dj8v.json"
     html = response.text
     assert '<p class="message-error">' not in html
-    assert "<p><strong>General Building Permits</strong> - 123 rows</p>" in html
+    assert "<p><strong>General Building Permits</strong> - 2 rows</p>" in html
     assert ">List of issued building permits from the City of Edmonton<" in html
+    assert (
+        "<p>Data will be imported into the <strong>data</strong> database.</p>" in html
+    )
 
 
 @pytest.mark.asyncio
@@ -87,49 +107,55 @@ async def test_import_shows_preview_errors(
 
 
 @pytest.mark.asyncio
-async def test_import(datasette, httpx_mock):
-    httpx_mock.add_response(
-        url="https://data.edmonton.ca/api/views/24uj-dj8v.json",
-        json={
-            "id": "24uj-dj8v",
-            "name": "General Building Permits",
-            "description": "List of issued building permits from the City of Edmonton",
-        },
+async def test_import_select_database_if_multiple_options(datasette2):
+    response = await datasette2.client.get(
+        "/-/import-socrata",
+        cookies={"ds_actor": datasette2.sign({"a": {"id": "root"}}, "actor")},
     )
-    httpx_mock.add_response(
-        url="https://data.edmonton.ca/resource/24uj-dj8v.json?$select=count(*)",
-        json=[{"count": "2"}],
-    )
+    assert response.status_code == 200
+    html = response.text
+    assert '<select name="database">' in html
+    assert "<option>data2</option>" in html
+    assert "<option>data3</option>" in html
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("database", ("data2", "data3"))
+async def test_import(datasette2, httpx_mock, database):
+    mock_metadata_and_count(httpx_mock)
     httpx_mock.add_response(
         url="https://data.edmonton.ca/api/views/24uj-dj8v/rows.csv",
         text="id,species\r\n1,Dog\r\n2,Chicken",
     )
 
     # Hit preview page, mainly to get a CSRFtoken
-    response = await datasette.client.get(
+    response = await datasette2.client.get(
         "/-/import-socrata",
         params={
             "url": "https://data.edmonton.ca/Urban-Planning-Economy/General-Building-Permits/24uj-dj8v"
         },
-        cookies={"ds_actor": datasette.sign({"a": {"id": "root"}}, "actor")},
+        cookies={"ds_actor": datasette2.sign({"a": {"id": "root"}}, "actor")},
     )
     assert response.status_code == 200
     csrftoken = response.cookies["ds_csrftoken"]
 
     # Now POST to kick off the import
-    import_response = await datasette.client.post(
+    import_response = await datasette2.client.post(
         "/-/import-socrata",
         data={
             "url": "https://data.edmonton.ca/Urban-Planning-Economy/General-Building-Permits/24uj-dj8v",
             "csrftoken": csrftoken,
+            "database": database,
         },
         cookies={
-            "ds_actor": datasette.sign({"a": {"id": "root"}}, "actor"),
+            "ds_actor": datasette2.sign({"a": {"id": "root"}}, "actor"),
             "ds_csrftoken": csrftoken,
         },
     )
     assert import_response.status_code == 302
-    assert import_response.headers["location"] == "/data/socrata_24uj_dj8v"
+    assert import_response.headers["location"] == "/{}/socrata_24uj_dj8v".format(
+        database or "data2"
+    )
     await asyncio.sleep(1.5)
     requests = httpx_mock.get_requests()
     assert [str(req.url) for req in requests] == [
@@ -140,7 +166,7 @@ async def test_import(datasette, httpx_mock):
         "https://data.edmonton.ca/api/views/24uj-dj8v/rows.csv",
     ]
     # Was the db correctly created?
-    db = sqlite_utils.Database(datasette.get_database("data").connect())
+    db = sqlite_utils.Database(datasette2.get_database(database).connect())
     assert set(db.table_names()) == {"socrata_24uj_dj8v", "socrata_imports"}
     assert (
         list(db["socrata_imports"].rows)[0].items()
@@ -157,6 +183,39 @@ async def test_import(datasette, httpx_mock):
         {"id": 1, "species": "Dog"},
         {"id": 2, "species": "Chicken"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_import_if_config_specifies_database(datasette2, httpx_mock):
+    mock_metadata_and_count(httpx_mock)
+    datasette2._metadata_local = {
+        "plugins": {"datasette-socrata": {"database": "data3"}}
+    }
+    # Hit preview page, mainly to get a CSRFtoken
+    response = await datasette2.client.get(
+        "/-/import-socrata",
+        cookies={"ds_actor": datasette2.sign({"a": {"id": "root"}}, "actor")},
+    )
+    assert response.status_code == 200
+    csrftoken = response.cookies["ds_csrftoken"]
+    assert (
+        "<p>Data will be imported into the <strong>data3</strong> database.</p>"
+        in response.text
+    )
+
+    # Now POST to kick off the import
+    import_response = await datasette2.client.post(
+        "/-/import-socrata",
+        data={
+            "url": "https://data.edmonton.ca/Urban-Planning-Economy/General-Building-Permits/24uj-dj8v",
+            "csrftoken": csrftoken,
+        },
+        cookies={
+            "ds_actor": datasette2.sign({"a": {"id": "root"}}, "actor"),
+            "ds_csrftoken": csrftoken,
+        },
+    )
+    assert import_response.status_code == 302
 
 
 @pytest.mark.asyncio

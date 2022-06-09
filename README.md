@@ -15,15 +15,29 @@ Install this plugin in the same environment as Datasette.
 
 ## Usage
 
+Make sure you have [enabled WAL mode](https://til.simonwillison.net/sqlite/enabling-wal-mode) on your database files before using this plugin.
+
 Once installed, an interface for importing data from Socrata will become available at this URL:
 
     /-/import-socrata
 
 Users will be able to paste in a URL to a dataset on Socrata in order to initialize an import.
 
+Any database that is attached to Datasette, is NOT loaded as immutable (with the `-i` option) and that has WAL mode enabled will be available for users to import data into.
+
 The `import-socrata` permission governs access. By default the `root` actor (accessible using `datasette --root` to start Datasette) is granted that permission.
 
 You can use permission plugins such as [datasette-permissions-sql](https://github.com/simonw/datasette-permissions-sql) to grant additional access to other users.
+
+## Configuration
+
+If you only want Socrata imports to be allowed to a specific database, you can configure that using plugin configration in `metadata.yml`:
+
+```yaml
+plugins:
+  datasette-socrata:
+    database: socrata
+```
 
 ## Development
 

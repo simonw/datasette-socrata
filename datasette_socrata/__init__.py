@@ -80,6 +80,35 @@ async def import_socrata(request, datasette):
         request.actor, "import-socrata", default=False
     ):
         raise Forbidden("Permission denied for import-socrata")
+
+    supported_databases = [
+        db
+        for db in datasette.databases.values()
+        if db.is_mutable
+        and db.name != "_internal"
+        and await db.execute_write_fn(
+            lambda conn: sqlite_utils.Database(conn).journal_mode == "wal"
+        )
+    ]
+    if not supported_databases:
+        raise Forbidden(
+            "There are no attached databases which can be written to and are running in WAL mode."
+        )
+
+    # Config can be used to restrict to a named database
+    config = datasette.plugin_config("datasette-socrata") or {}
+    configured_database = config.get("database")
+    if configured_database:
+        if configured_database not in [db.name for db in supported_databases]:
+            raise Forbidden(
+                "Configured database '{}' is not both writable and running in WAL mode.".format(
+                    configured_database
+                )
+            )
+        supported_databases = [
+            db for db in supported_databases if db.name == configured_database
+        ]
+
     if request.method != "POST":
         url = request.args.get("url") or ""
         error = None
@@ -100,6 +129,7 @@ async def import_socrata(request, datasette):
                     "url": url,
                     "fetched_metadata": metadata,
                     "row_count": row_count,
+                    "databases": [db.name for db in supported_databases],
                 },
                 request=request,
             )
@@ -124,9 +154,37 @@ async def import_socrata(request, datasette):
             )
         )
 
+    # Which database?
+    if len(supported_databases) == 1:
+        database = supported_databases[0]
+    else:
+        print(vars)
+        database_name = vars.get("database")
+        filtered = [db for db in supported_databases if db.name == database_name]
+        if not filtered:
+            raise Forbidden("You need to pick a database.")
+        database = filtered[0]
+
+    # Ensure table exists
+    await database.execute_write(
+        textwrap.dedent(
+            """
+        create table if not exists socrata_imports (
+            id text primary key,
+            name text,
+            url text,
+            metadata text,
+            row_count integer,
+            row_progress integer,
+            import_started text,
+            import_complete text
+        );
+        """
+        )
+    )
+
     # Run the actual import here
     # First, write the metadata to the `socrata_imports` table:
-    database = datasette.get_database("data")  # TODO: Configure database
     await database.execute_write_fn(
         lambda conn: sqlite_utils.Database(conn)["socrata_imports"].insert(
             {
@@ -199,9 +257,22 @@ async def import_socrata(request, datasette):
 
     asyncio.ensure_future(run_the_import())
 
-    # Wait for 1 second for the table to be created, then redirect to it
-    await asyncio.sleep(1.0)
-    return Response.redirect("/data/{}".format(table_name))
+    # Wait for up to 1 second for the table to exist, then redirect to it
+    i = 0
+    while i < 10:
+        if (
+            await database.execute(
+                "select 1 from sqlite_master where tbl_name = ?", [table_name]
+            )
+        ).first():
+            return Response.redirect(
+                datasette.urls.table(database=database.name, table=table_name)
+            )
+        i += 1
+        await asyncio.sleep(0.1)
+    # Set a message about the table being created and redirect to database page
+    datasette.add_message(request, "Import has started", datasette.INFO)
+    return Response.redirect(datasette.urls.database(database=database.name))
 
 
 class AsyncDictReader:
@@ -245,32 +316,6 @@ def register_routes():
 
 
 @hookimpl
-def startup(datasette):
-    async def inner():
-        db = datasette.get_database("data")
-        await db.execute_write_fn(lambda conn: sqlite_utils.Database(conn).enable_wal())
-        await db.execute_write(
-            textwrap.dedent(
-                """
-            create table if not exists socrata_imports (
-                id text primary key,
-                name text,
-                url text,
-                metadata text,
-                row_count integer,
-                row_progress integer,
-                import_started text,
-                import_complete text
-            );
-        """
-            )
-        )
-
-    return inner
-
-
-@hookimpl
 def permission_allowed(actor, action):
-    print(actor, action)
     if action == "import-socrata" and actor and actor.get("id") == "root":
         return True
