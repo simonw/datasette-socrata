@@ -32,7 +32,7 @@ setup(
     version=VERSION,
     packages=["datasette_socrata"],
     entry_points={"datasette": ["socrata = datasette_socrata"]},
-    install_requires=["datasette", "sqlite-utils"],
+    install_requires=["datasette", "sqlite-utils", "pytest-httpx"],
     extras_require={"test": ["pytest", "pytest-asyncio"]},
     package_data={"datasette_socrata": ["templates/*"]},
     python_requires=">=3.7",

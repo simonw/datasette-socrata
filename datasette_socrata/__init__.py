@@ -86,7 +86,8 @@ async def socrata(request, datasette):
                 domain, id, metadata = await parse_url_fetch_metadata(url)
             except DatasetError as e:
                 error = str(e)
-            row_count = await get_row_count(domain, id)
+            else:
+                row_count = await get_row_count(domain, id)
         return Response.html(
             await datasette.render_template(
                 "datasette_socrata.html",
