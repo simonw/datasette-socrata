@@ -23,6 +23,10 @@ Once installed, an interface for importing data from Socrata will become availab
 
 Users will be able to paste in a URL to a dataset on Socrata in order to initialize an import.
 
+You can also pre-fill the form by passing a `?url=` parameter, for example:
+
+    /-/import-socrata?url=https://data.sfgov.org/City-Infrastructure/Street-Tree-List/tkzw-k3nq
+
 Any database that is attached to Datasette, is NOT loaded as immutable (with the `-i` option) and that has WAL mode enabled will be available for users to import data into.
 
 The `import-socrata` permission governs access. By default the `root` actor (accessible using `datasette --root` to start Datasette) is granted that permission.
