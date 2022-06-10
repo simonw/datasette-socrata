@@ -81,6 +81,22 @@ async def import_socrata(request, datasette):
     ):
         raise Forbidden("Permission denied for import-socrata")
 
+    async def _error(message, status=400):
+        return Response.html(
+            await datasette.render_template(
+                "datasette_socrata_error.html",
+                {
+                    "error": message,
+                },
+                request=request,
+            ),
+            status=status,
+        )
+
+    # Config can be used to restrict to a named database
+    config = datasette.plugin_config("datasette-socrata") or {}
+    configured_database = config.get("database")
+
     supported_databases = [
         db
         for db in datasette.databases.values()
@@ -90,17 +106,14 @@ async def import_socrata(request, datasette):
             lambda conn: sqlite_utils.Database(conn).journal_mode == "wal"
         )
     ]
-    if not supported_databases:
-        raise Forbidden(
+    if not supported_databases and not configured_database:
+        return await _error(
             "There are no attached databases which can be written to and are running in WAL mode."
         )
 
-    # Config can be used to restrict to a named database
-    config = datasette.plugin_config("datasette-socrata") or {}
-    configured_database = config.get("database")
     if configured_database:
         if configured_database not in [db.name for db in supported_databases]:
-            raise Forbidden(
+            return await _error(
                 "Configured database '{}' is not both writable and running in WAL mode.".format(
                     configured_database
                 )
@@ -161,7 +174,7 @@ async def import_socrata(request, datasette):
         database_name = vars.get("database")
         filtered = [db for db in supported_databases if db.name == database_name]
         if not filtered:
-            raise Forbidden("You need to pick a database.")
+            return await _error("You need to pick a database.")
         database = filtered[0]
 
     # Ensure table exists

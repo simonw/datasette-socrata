@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}datasette-socrata error{% endblock %}
+
+{% block nav %}
+    <p class="crumbs">
+        <a href="/">home</a>
+    </p>
+    {{ super() }}
+{% endblock %}
+
+{% block content %}
+<h1>datasette-socrata error</h1>
+
+<p class="message-error">{{ error }}</p>
+{% endblock %}

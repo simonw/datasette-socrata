@@ -69,6 +69,51 @@ async def test_import_shows_preview(datasette, httpx_mock):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("number_of_nowal_databases", (0, 1, 2))
+async def test_configuration_error_no_databases(tmpdir, number_of_nowal_databases):
+    db_paths = []
+    for i in range(number_of_nowal_databases):
+        db_path = str(tmpdir / "db{}.db".format(i))
+        sqlite_utils.Database(db_path).vacuum()
+        db_paths.append(db_path)
+    ds = Datasette(db_paths)
+    response = await ds.client.get(
+        "/-/import-socrata",
+        cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+    )
+    assert response.status_code == 400
+    assert (
+        "There are no attached databases which can be written to and are running in WAL mode"
+        in response.text
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("immutable", (False, True))
+async def test_configuration_error_bad_configured_database(tmpdir, immutable):
+    db_path = str(tmpdir / "data.db")
+    db_paths = []
+    immutables = []
+    if immutable:
+        immutables = [db_path]
+        sqlite_utils.Database(db_path).enable_wal()
+    else:
+        db_paths = [db_path]
+        sqlite_utils.Database(db_path).vacuum()
+    ds = Datasette(
+        db_paths,
+        immutables=immutables,
+        metadata={"plugins": {"datasette-socrata": {"database": "data"}}},
+    )
+    response = await ds.client.get(
+        "/-/import-socrata",
+        cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+    )
+    assert response.status_code == 400
+    assert "is not both writable and running in WAL mode" in response.text
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "scenario,expected_error",
     (
