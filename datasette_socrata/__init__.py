@@ -211,6 +211,7 @@ async def import_socrata(request, datasette):
             replace=True,
         )
     )
+    await refresh_in_memory_socrata_metadata(datasette)
 
     # Now start the import, in a task which runs after this request has returned
     table_name = "socrata_" + id.replace("-", "_")
@@ -418,3 +419,59 @@ def extra_body_script(view_name, table, database, datasette):
                 )
             ),
         )
+
+
+async def refresh_in_memory_socrata_metadata(datasette):
+    datasette._socrata_metadata = {}
+    databases = {}
+    for database_name, db in datasette.databases.items():
+        tables = {}
+        if "socrata_imports" in await db.table_names():
+            table_metadata = {
+                row["id"]: dict(row, metadata=json.loads(row["metadata"]))
+                for row in await db.execute("select * from socrata_imports")
+            }
+        else:
+            continue
+        for table_id, info in table_metadata.items():
+            table_metadata = {
+                "title": info["name"],
+                "source": info["metadata"].get("attribution")
+                or info["url"].split("//")[1].split("/")[0],
+                "source_url": info["url"],
+            }
+            description = info["metadata"].get("description")
+            if description:
+                table_metadata["description"] = description
+            column_descriptions = {
+                c["name"]: c.get("description")
+                for c in (info.get("metadata") or {}).get("columns") or []
+                if c.get("description")
+            }
+            if column_descriptions:
+                table_metadata["columns"] = column_descriptions
+            if info["metadata"].get("license"):
+                license_name = info["metadata"]["license"].get("name")
+                license_url = info["metadata"]["license"].get("termsLink")
+                if license_name and license_url:
+                    table_metadata["license"] = license_name
+                    table_metadata["license_url"] = license_url
+            tables["socrata_{}".format(table_id.replace("-", "_"))] = table_metadata
+        databases[database_name] = {
+            "tables": tables,
+        }
+    datasette._socrata_metadata = {"databases": databases}
+
+
+# Populate datasette._socrata_metadata on startup
+@hookimpl
+def startup(datasette):
+    async def inner():
+        await refresh_in_memory_socrata_metadata(datasette)
+
+    return inner
+
+
+@hookimpl
+def get_metadata(datasette):
+    return getattr(datasette, "_socrata_metadata", None)

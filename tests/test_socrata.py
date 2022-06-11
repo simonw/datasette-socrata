@@ -38,6 +38,20 @@ def mock_metadata_and_count(httpx_mock):
             "id": "24uj-dj8v",
             "name": "General Building Permits",
             "description": "List of issued building permits from the City of Edmonton",
+            "license": {
+                "name": "Example license",
+                "termsLink": "http://www.example.com/",
+            },
+            "columns": [
+                {
+                    "name": "id",
+                    "description": "The ID",
+                },
+                {
+                    "name": "species",
+                    "description": "What species",
+                },
+            ],
         },
     )
     httpx_mock.add_response(
@@ -219,7 +233,7 @@ async def test_import(datasette2, httpx_mock, database):
             "id": "24uj-dj8v",
             "name": "General Building Permits",
             "url": "https://data.edmonton.ca/Urban-Planning-Economy/General-Building-Permits/24uj-dj8v",
-            "metadata": '{"id": "24uj-dj8v", "name": "General Building Permits", "description": "List of issued building permits from the City of Edmonton"}',
+            "metadata": '{"id": "24uj-dj8v", "name": "General Building Permits", "description": "List of issued building permits from the City of Edmonton", "license": {"name": "Example license", "termsLink": "http://www.example.com/"}, "columns": [{"name": "id", "description": "The ID"}, {"name": "species", "description": "What species"}]}',
             "row_count": 2,
             "row_progress": 2,
         }.items()
@@ -228,6 +242,26 @@ async def test_import(datasette2, httpx_mock, database):
         {"id": 1, "species": "Dog"},
         {"id": 2, "species": "Chicken"},
     ]
+
+    # And check metadata
+    metadata = (await datasette2.client.get("/-/metadata.json")).json()
+    assert metadata == {
+        "databases": {
+            database: {
+                "tables": {
+                    "socrata_24uj_dj8v": {
+                        "title": "General Building Permits",
+                        "source": "data.edmonton.ca",
+                        "source_url": "https://data.edmonton.ca/Urban-Planning-Economy/General-Building-Permits/24uj-dj8v",
+                        "description": "List of issued building permits from the City of Edmonton",
+                        "columns": {"id": "The ID", "species": "What species"},
+                        "license": "Example license",
+                        "license_url": "http://www.example.com/",
+                    }
+                }
+            }
+        }
+    }
 
 
 @pytest.mark.asyncio

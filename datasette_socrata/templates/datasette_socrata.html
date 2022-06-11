@@ -42,7 +42,9 @@
     </select></label>
   </p>
   {% else %}
-    <p>Data will be imported into the <strong>{{ databases[0] }}</strong> database.</p>
+    {% if databases %}
+      <p>Data will be imported into the <strong>{{ databases[0] }}</strong> database.</p>
+    {% endif %}
   {% endif %}
 </form>
 
