@@ -182,9 +182,10 @@ async def test_import_select_database_if_multiple_options(datasette2):
 @pytest.mark.parametrize("database", ("data2", "data3"))
 async def test_import(datasette2, httpx_mock, database):
     mock_metadata_and_count(httpx_mock)
+    long_value = "a" * 131073
     httpx_mock.add_response(
         url="https://data.edmonton.ca/api/views/24uj-dj8v/rows.csv",
-        text="id,species\r\n1,Dog\r\n2,Chicken",
+        text="id,species\r\n1,Dog\r\n2,{}".format(long_value),
     )
 
     # Hit preview page, mainly to get a CSRFtoken
@@ -240,7 +241,7 @@ async def test_import(datasette2, httpx_mock, database):
     )
     assert list(db["socrata_24uj_dj8v"].rows) == [
         {"id": 1, "species": "Dog"},
-        {"id": 2, "species": "Chicken"},
+        {"id": 2, "species": long_value},
     ]
 
     # And check metadata

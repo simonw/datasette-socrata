@@ -3,7 +3,7 @@ import asyncio
 import datetime
 import httpx
 import sqlite_utils
-from sqlite_utils.utils import TypeTracker
+from sqlite_utils.utils import TypeTracker, maximize_csv_field_size_limit
 import urllib.parse
 import re
 import json
@@ -11,6 +11,7 @@ import io
 import csv
 import textwrap
 
+maximize_csv_field_size_limit()
 
 is_valid_id = re.compile(r"^\w{4}\-\w{4}$").match
 
