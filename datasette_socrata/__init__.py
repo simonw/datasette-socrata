@@ -398,6 +398,11 @@ progress.datasette-socrata::-webkit-progress-value {
         fetch(pollUrl).then(r => r.json()).then(rows => {
             if (rows.length) {
                 const row = rows[0];
+                if (row.error) {
+                    alert(`Error: ${row.error}`);
+                    progress.style.display = 'none';
+                    return;
+                }
                 if (row.row_count > row.row_progress) {
                     progress.style.display = 'block';
                     progress.setAttribute('value', row.row_progress);
@@ -427,7 +432,7 @@ def extra_body_script(view_name, table, database, datasette):
         return PROGRESS_JS.replace(
             "!POLL_URL!",
             json.dumps(
-                "{}.json?id={}&_shape=array&_col=row_count&_col=row_progress".format(
+                "{}.json?id={}&_shape=array&_col=row_count&_col=row_progress&_col=error".format(
                     datasette.urls.table(database=database, table="socrata_imports"),
                     dataset_id,
                 )
