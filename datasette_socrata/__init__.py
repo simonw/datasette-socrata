@@ -364,7 +364,10 @@ def menu_links(datasette, actor):
 
 PROGRESS_JS = """
 const SOCRATA_PROGRESS_CSS = `
-progress.datasette-socrata {
+.datasette-socrata-progress {
+    position: relative;
+}
+.datasette-socrata-progress progress {
     -webkit-appearance: none;
     appearance: none;
     border: none;
@@ -373,10 +376,19 @@ progress.datasette-socrata {
     margin-top: 1em;
     margin-bottom: 1em;
 }
-progress.datasette-socrata::-webkit-progress-bar {
+.datasette-socrata-progress div {
+    position: absolute;
+    top: 0px;
+    left: 10px;
+    line-height: 2em;
+    color: #fff;
+    text-shadow: 1px 1px 3px #2f2c2c;
+    font-size: 14px;
+}
+.datasette-socrata-progress progress::-webkit-progress-bar {
     background-color: #ddd;
 }
-progress.datasette-socrata::-webkit-progress-value {
+.datasette-socrata-progress progress::-webkit-progress-value {
     background-color: #124d77;
 }
 `;
@@ -385,14 +397,21 @@ progress.datasette-socrata::-webkit-progress-value {
     style.innerHTML = SOCRATA_PROGRESS_CSS;
     const pollUrl = !POLL_URL!;
     document.head.appendChild(style);
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('class', 'datasette-socrata-progress');
     const progress = document.createElement('progress');
-    progress.setAttribute('class', 'datasette-socrata');
+    wrapper.appendChild(progress);
+    const text = document.createElement('div');
+    wrapper.appendChild(text);
     progress.setAttribute('value', 0);
     progress.setAttribute('max', 100);
     progress.style.display = 'none';
     progress.innerHTML = 'Importing from Socrata...';
     const table = document.querySelector('table.rows-and-columns');
-    table.parentNode.insertBefore(progress, table);
+    table.parentNode.insertBefore(wrapper, table);
+    // Only show message about completion if we have polled a different
+    // value at least once.
+    let hasPolled = false;
     /* Start polling */
     function pollNext() {
         fetch(pollUrl).then(r => r.json()).then(rows => {
@@ -405,11 +424,17 @@ progress.datasette-socrata::-webkit-progress-value {
                 }
                 if (row.row_count > row.row_progress) {
                     progress.style.display = 'block';
+                    text.innerText = `${row.row_progress.toLocaleString()} / ${row.row_count.toLocaleString()}`;
                     progress.setAttribute('value', row.row_progress);
                     progress.setAttribute('max', row.row_count);
                     setTimeout(pollNext, 2000);
+                    hasPolled = true;
                 } else {
-                    progress.style.display = 'none';
+                    if (hasPolled) {
+                        text.innerText = `${row.row_progress.toLocaleString()} rows loaded - refresh the page to see them`;
+                    } else {
+                        progress.style.display = 'none';
+                    }
                 }
             }
         });
