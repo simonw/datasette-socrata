@@ -1,4 +1,6 @@
 from datasette.app import Datasette
+from datasette import hookimpl
+from datasette.plugins import pm
 import sqlite_utils
 from sqlite_utils.utils import maximize_csv_field_size_limit
 import csv
@@ -269,10 +271,32 @@ async def test_import(datasette2, httpx_mock, database):
 
 
 @pytest.mark.asyncio
-async def test_import_error(datasette, httpx_mock):
-    try:
+@pytest.mark.parametrize(
+    "type_of_error,expected_error",
+    (
+        ("disk_space", "Disk space is running low"),
+        ("csv_field_length", "field larger than field limit (2048)"),
+    ),
+)
+async def test_import_error(datasette, httpx_mock, type_of_error, expected_error):
+    should_unregister_plugin = False
+    if type_of_error == "csv_field_length":
         # Reset CSV field length to ensure we get an error
         csv.field_size_limit(2048)
+    elif type_of_error == "disk_space":
+        should_unregister_plugin = True
+
+        class DiskSpacePlugin:
+            __name__ = "DiskSpacePlugin"
+
+            @hookimpl
+            def low_disk_space(self):
+                return True
+
+        pm.register(DiskSpacePlugin(), name="undo")
+    else:
+        assert False, "Bad type_of_error"
+    try:
         mock_metadata_and_count(httpx_mock)
         long_value = "a" * 2049
         httpx_mock.add_response(
@@ -307,9 +331,11 @@ async def test_import_error(datasette, httpx_mock):
         assert len(rows) == 1
         row = dict(rows[0])
         assert row["row_count"] == 2
-        assert row["error"] == "field larger than field limit (2048)"
+        assert row["error"] == expected_error
     finally:
         maximize_csv_field_size_limit()
+        if should_unregister_plugin:
+            pm.unregister(name="undo")
 
 
 @pytest.mark.asyncio

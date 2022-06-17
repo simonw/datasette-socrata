@@ -1,4 +1,5 @@
 from datasette import hookimpl, Response, Forbidden
+from datasette_low_disk_space_hook import space_is_running_low
 import asyncio
 import datetime
 import httpx
@@ -39,6 +40,10 @@ def parse_url(url):
 
 
 class MetadataError(DatasetError):
+    pass
+
+
+class DiskSpaceLow(Exception):
     pass
 
 
@@ -239,6 +244,9 @@ async def import_socrata(request, datasette):
         csv_url = "https://{}/api/views/{}/rows.csv".format(domain, id)
 
         async def write_batch(rows):
+            if await space_is_running_low(datasette):
+                raise DiskSpaceLow("Disk space is running low")
+
             def _write(conn):
                 db = sqlite_utils.Database(conn)
                 with db.conn:
