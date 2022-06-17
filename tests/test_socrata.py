@@ -1,5 +1,7 @@
 from datasette.app import Datasette
 import sqlite_utils
+from sqlite_utils.utils import maximize_csv_field_size_limit
+import csv
 import pytest
 import httpx
 import asyncio
@@ -225,9 +227,8 @@ async def test_import(datasette2, httpx_mock, database):
         "https://data.edmonton.ca/resource/24uj-dj8v.json?$select=count(*)",
         "https://data.edmonton.ca/api/views/24uj-dj8v/rows.csv",
     ]
-    # Was the db correctly created?
+    # Was the db table correctly created?
     db = sqlite_utils.Database(datasette2.get_database(database).connect())
-    assert set(db.table_names()) == {"socrata_24uj_dj8v", "socrata_imports"}
     assert (
         list(db["socrata_imports"].rows)[0].items()
         >= {
@@ -237,8 +238,10 @@ async def test_import(datasette2, httpx_mock, database):
             "metadata": '{"id": "24uj-dj8v", "name": "General Building Permits", "description": "List of issued building permits from the City of Edmonton", "license": {"name": "Example license", "termsLink": "http://www.example.com/"}, "columns": [{"name": "id", "description": "The ID"}, {"name": "species", "description": "What species"}]}',
             "row_count": 2,
             "row_progress": 2,
+            "error": None,
         }.items()
     )
+    assert set(db.table_names()) == {"socrata_24uj_dj8v", "socrata_imports"}
     assert list(db["socrata_24uj_dj8v"].rows) == [
         {"id": 1, "species": "Dog"},
         {"id": 2, "species": long_value},
@@ -263,6 +266,50 @@ async def test_import(datasette2, httpx_mock, database):
             }
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_import_error(datasette, httpx_mock):
+    try:
+        # Reset CSV field length to ensure we get an error
+        csv.field_size_limit(2048)
+        mock_metadata_and_count(httpx_mock)
+        long_value = "a" * 2049
+        httpx_mock.add_response(
+            url="https://data.edmonton.ca/api/views/24uj-dj8v/rows.csv",
+            text="id,species\r\n1,Dog\r\n2,{}".format(long_value),
+        )
+        csrftoken = (
+            await datasette.client.get(
+                "/-/import-socrata",
+                cookies={"ds_actor": datasette.sign({"a": {"id": "root"}}, "actor")},
+            )
+        ).cookies["ds_csrftoken"]
+        import_response = await datasette.client.post(
+            "/-/import-socrata",
+            data={
+                "url": "https://data.edmonton.ca/Urban-Planning-Economy/General-Building-Permits/24uj-dj8v",
+                "csrftoken": csrftoken,
+            },
+            cookies={
+                "ds_actor": datasette.sign({"a": {"id": "root"}}, "actor"),
+                "ds_csrftoken": csrftoken,
+            },
+        )
+        assert import_response.status_code == 302
+        # Now wait 1s - after which the error should be present
+        await asyncio.sleep(1.0)
+        rows = (
+            await datasette.get_database("data").execute(
+                "select * from socrata_imports"
+            )
+        ).rows
+        assert len(rows) == 1
+        row = dict(rows[0])
+        assert row["row_count"] == 2
+        assert row["error"] == "field larger than field limit (2048)"
+    finally:
+        maximize_csv_field_size_limit()
 
 
 @pytest.mark.asyncio

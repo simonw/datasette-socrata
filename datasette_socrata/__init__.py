@@ -208,8 +208,10 @@ async def import_socrata(request, datasette):
                 "row_count": row_count,
                 "row_progress": 0,
                 "import_started": datetime.datetime.utcnow().isoformat() + "Z",
+                "error": None,
             },
             replace=True,
+            alter=True,
         )
     )
     await refresh_in_memory_socrata_metadata(datasette)
@@ -221,6 +223,17 @@ async def import_socrata(request, datasette):
     await database.execute_write_fn(
         lambda conn: sqlite_utils.Database(conn)[table_name].drop(ignore=True)
     )
+
+    async def run_the_import_catch_errors():
+        try:
+            await run_the_import()
+        except Exception as error:
+            await database.execute_write_fn(
+                lambda conn: sqlite_utils.Database(conn)["socrata_imports"].update(
+                    id,
+                    {"error": str(error)},
+                )
+            )
 
     async def run_the_import():
         csv_url = "https://{}/api/views/{}/rows.csv".format(domain, id)
@@ -269,7 +282,7 @@ async def import_socrata(request, datasette):
                     )
                 )
 
-    asyncio.ensure_future(run_the_import())
+    asyncio.ensure_future(run_the_import_catch_errors())
 
     # Wait for up to 1 second for the table to exist, then redirect to it
     i = 0
