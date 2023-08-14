@@ -5,7 +5,7 @@
 [![Tests](https://github.com/simonw/datasette-socrata/workflows/Test/badge.svg)](https://github.com/simonw/datasette-socrata/actions?query=workflow%3ATest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/simonw/datasette-socrata/blob/main/LICENSE)
 
-Import data from Socrata into Datasette
+Import data from [Socrata](https://dev.socrata.com/) into [Datasette](https://datasette.io/)
 
 ## Installation
 
